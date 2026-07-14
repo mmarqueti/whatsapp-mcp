@@ -7,6 +7,23 @@ Goal: Provide a minimal, clean, production-ready baseline so developers can use 
 
 ---
 
+## Quick Start
+
+1. Copy the environment template and fill in your Meta credentials:
+   ```bash
+   cp .env.example .env
+   ```
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+3. Run the server locally:
+   ```bash
+   npm run dev
+   ```
+
+> Tip: if you're testing only the MCP tools locally, use valid WhatsApp Cloud API credentials in `.env`. For webhook-only testing, you can use placeholder values while simulating incoming payloads.
+
 # 1. Objectives
 
 - Create a lightweight MCP server (TypeScript + Node.js).

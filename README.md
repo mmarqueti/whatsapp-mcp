@@ -63,7 +63,6 @@ Goal: Provide a minimal, clean, production-ready baseline so developers can use 
     env.ts
   index.ts
 .env.example
-mcp.json
 package.json
 README.md
 ```
@@ -82,7 +81,6 @@ META_VERIFY_TOKEN=
 META_APP_SECRET=
 MCP_AUTH_TOKEN=
 PORT=4000
-MCP_PORT=8000
 ```
 
 `MCP_AUTH_TOKEN` is the shared secret that authenticates MCP WebSocket

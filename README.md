@@ -14,7 +14,9 @@ Goal: Provide a minimal, clean, production-ready baseline so developers can use 
    cp .env.example .env
    ```
    Set `MCP_AUTH_TOKEN` to a strong random secret as well - the MCP WebSocket
-   server refuses to start without it.
+   server refuses to start without it. `META_APP_SECRET` (App Secret in the
+   Meta App Dashboard) is required too: `POST /webhook` rejects any delivery
+   whose `X-Hub-Signature-256` does not match it.
 2. Install dependencies:
    ```bash
    npm install
@@ -77,6 +79,7 @@ META_WHATSAPP_TOKEN=
 META_WHATSAPP_PHONE_ID=
 META_WHATSAPP_WABA_ID=
 META_VERIFY_TOKEN=
+META_APP_SECRET=
 MCP_AUTH_TOKEN=
 PORT=4000
 MCP_PORT=8000
@@ -84,6 +87,11 @@ MCP_PORT=8000
 
 `MCP_AUTH_TOKEN` is the shared secret that authenticates MCP WebSocket
 clients. The server exits on startup if it is missing.
+
+`META_APP_SECRET` is the App Secret of the Meta app (App Dashboard ->
+Settings -> Basic). It authenticates incoming webhook deliveries: the
+server exits on startup if it is missing, and every `POST /webhook` is
+validated against it.
 
 Optional:
 
@@ -152,12 +160,13 @@ Features:
     }
   }
   ```
-- Always ack `POST /webhook` with 200 (Meta retries on non-2xx); delivery
-  receipts (`statuses`) are acknowledged but not broadcast.
-
-Note: Meta webhook signature validation (`X-Hub-Signature-256`) is not
-implemented yet - enable it before exposing the endpoint beyond a trusted
-network (tracked in a separate issue).
+- Validate the `X-Hub-Signature-256` header on every `POST /webhook`
+  against `META_APP_SECRET` (HMAC-SHA256 over the raw body, constant-time
+  comparison). Unsigned or badly signed requests are rejected with 401
+  before the payload is read.
+- Always ack valid `POST /webhook` deliveries with 200 (Meta retries on
+  non-2xx); delivery receipts (`statuses`) are acknowledged but not
+  broadcast.
 
 ---
 
@@ -213,7 +222,11 @@ Verify connectivity with WhatsApp Cloud API.
   valid token are rejected during the upgrade handshake, and the server
   refuses to start when `MCP_AUTH_TOKEN` is not set. Example:
   `ws://localhost:4000/?token=$MCP_AUTH_TOKEN`
-- Validate Meta webhook signature (optional v1).
+- **Meta webhook signature validation (required).** Every `POST /webhook`
+  must carry a valid `X-Hub-Signature-256` header: HMAC-SHA256 of the raw
+  request body keyed with `META_APP_SECRET`, compared in constant time.
+  Requests without a valid signature are rejected with 401, so forged
+  payloads never reach the MCP broadcast.
 - Sanitize user inputs.
 - Never log tokens.
 

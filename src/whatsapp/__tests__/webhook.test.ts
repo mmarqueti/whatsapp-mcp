@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { createHmac } from 'crypto';
 import request from 'supertest';
 import express from 'express';
 import { webhookRouter } from '../webhook.js';
+import { captureRawBody } from '../signature.js';
 import { config } from '../../config/env.js';
 
 
@@ -22,6 +24,7 @@ vi.mock('../../config/env.js', () => ({
         META_VERIFY_TOKEN: 'test-token',
         META_WHATSAPP_TOKEN: 'test-token',
         META_WHATSAPP_PHONE_ID: 'test-phone-id',
+        META_APP_SECRET: 'test-app-secret',
         PORT: 4000
     }
 }));
@@ -29,8 +32,23 @@ vi.mock('../../config/env.js', () => ({
 
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ verify: captureRawBody }));
 app.use('/webhook', webhookRouter);
+
+// Sign a payload exactly as Meta would: HMAC-SHA256 over the raw JSON body.
+const APP_SECRET = 'test-app-secret';
+function sign(rawBody: string, secret = APP_SECRET): string {
+    return 'sha256=' + createHmac('sha256', secret).update(rawBody).digest('hex');
+}
+
+function postSigned(path: string, payload: unknown) {
+    const rawBody = JSON.stringify(payload);
+    return request(app)
+        .post(path)
+        .set('Content-Type', 'application/json')
+        .set('X-Hub-Signature-256', sign(rawBody))
+        .send(rawBody);
+}
 
 describe('Webhook Integration', () => {
     beforeEach(() => {
@@ -95,7 +113,7 @@ describe('Webhook Integration', () => {
         };
 
         it('acks and broadcasts a normalized text message', async () => {
-            const response = await request(app).post('/webhook').send(textPayload);
+            const response = await postSigned('/webhook', textPayload);
 
             expect(response.status).toBe(200);
             expect(mocks.broadcastIncomingMessage).toHaveBeenCalledTimes(1);
@@ -119,7 +137,7 @@ describe('Webhook Integration', () => {
                 image: { id: '987654321', mime_type: 'image/jpeg' },
             }];
 
-            const response = await request(app).post('/webhook').send(payload);
+            const response = await postSigned('/webhook', payload);
 
             expect(response.status).toBe(200);
             expect(mocks.broadcastIncomingMessage).toHaveBeenCalledTimes(1);
@@ -138,7 +156,7 @@ describe('Webhook Integration', () => {
             const second = { ...textPayload.entry[0].changes[0].value.messages[0], id: 'wamid.SECOND' };
             payload.entry[0].changes[0].value.messages.push(second);
 
-            const response = await request(app).post('/webhook').send(payload);
+            const response = await postSigned('/webhook', payload);
 
             expect(response.status).toBe(200);
             expect(mocks.broadcastIncomingMessage).toHaveBeenCalledTimes(2);
@@ -160,16 +178,58 @@ describe('Webhook Integration', () => {
                 }],
             };
 
-            const response = await request(app).post('/webhook').send(payload);
+            const response = await postSigned('/webhook', payload);
 
             expect(response.status).toBe(200);
             expect(mocks.broadcastIncomingMessage).not.toHaveBeenCalled();
         });
 
         it('acks malformed payloads without broadcasting', async () => {
-            const response = await request(app).post('/webhook').send({ unexpected: true });
+            const response = await postSigned('/webhook', { unexpected: true });
 
             expect(response.status).toBe(200);
+            expect(mocks.broadcastIncomingMessage).not.toHaveBeenCalled();
+        });
+
+        it('rejects requests without a signature header', async () => {
+            const response = await request(app).post('/webhook').send(textPayload);
+
+            expect(response.status).toBe(401);
+            expect(mocks.broadcastIncomingMessage).not.toHaveBeenCalled();
+        });
+
+        it('rejects requests signed with the wrong secret', async () => {
+            const rawBody = JSON.stringify(textPayload);
+            const response = await request(app)
+                .post('/webhook')
+                .set('Content-Type', 'application/json')
+                .set('X-Hub-Signature-256', sign(rawBody, 'not-the-app-secret'))
+                .send(rawBody);
+
+            expect(response.status).toBe(401);
+            expect(mocks.broadcastIncomingMessage).not.toHaveBeenCalled();
+        });
+
+        it('rejects requests with a malformed signature header', async () => {
+            const rawBody = JSON.stringify(textPayload);
+            const response = await request(app)
+                .post('/webhook')
+                .set('Content-Type', 'application/json')
+                .set('X-Hub-Signature-256', 'not-a-valid-header')
+                .send(rawBody);
+
+            expect(response.status).toBe(401);
+            expect(mocks.broadcastIncomingMessage).not.toHaveBeenCalled();
+        });
+
+        it('rejects a signature computed over a different body', async () => {
+            const response = await request(app)
+                .post('/webhook')
+                .set('Content-Type', 'application/json')
+                .set('X-Hub-Signature-256', sign(JSON.stringify({ forged: true })))
+                .send(JSON.stringify(textPayload));
+
+            expect(response.status).toBe(401);
             expect(mocks.broadcastIncomingMessage).not.toHaveBeenCalled();
         });
     });

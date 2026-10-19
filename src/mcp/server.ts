@@ -1,6 +1,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { WebSocketServer, WebSocket } from 'ws';
+import { WebSocketServer, WebSocket, type VerifyClientCallbackSync } from 'ws';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { timingSafeEqual } from 'crypto';
+import type { IncomingMessage } from 'http';
 import { z } from 'zod';
 import { whatsAppClient } from '../whatsapp/client.js';
 
@@ -78,8 +80,43 @@ class WhatsAppMcpServer {
         );
     }
 
+    // Accepts the shared token either as an `Authorization: Bearer <token>`
+    // header or as a `?token=<token>` query parameter (for MCP clients that
+    // cannot set WebSocket headers). Compared in constant time.
+    private isAuthorized(req: IncomingMessage): boolean {
+        const expectedToken = config.MCP_AUTH_TOKEN;
+        if (!expectedToken) {
+            // Fail closed: never serve an unauthenticated MCP endpoint.
+            return false;
+        }
+
+        let presented: string | undefined;
+        const authHeader = req.headers['authorization'];
+        if (authHeader?.startsWith('Bearer ')) {
+            presented = authHeader.slice('Bearer '.length);
+        } else {
+            const url = new URL(req.url ?? '/', 'http://localhost');
+            presented = url.searchParams.get('token') ?? undefined;
+        }
+
+        if (!presented) {
+            return false;
+        }
+
+        const expected = Buffer.from(expectedToken);
+        const candidate = Buffer.from(presented);
+        return expected.length === candidate.length && timingSafeEqual(expected, candidate);
+    }
+
     async start(httpServer: any) {
-        this.wss = new WebSocketServer({ server: httpServer });
+        if (!config.MCP_AUTH_TOKEN) {
+            throw new Error('MCP_AUTH_TOKEN is required to start the MCP WebSocket server');
+        }
+
+        this.wss = new WebSocketServer({
+            server: httpServer,
+            verifyClient: ((info) => this.isAuthorized(info.req)) as VerifyClientCallbackSync,
+        });
 
         this.wss.on('connection', async (ws: WebSocket) => {
             console.error('New MCP WebSocket connection');

@@ -2,6 +2,7 @@ import express from 'express';
 import { config } from '../config/env.js';
 import { mcpServer } from '../mcp/server.js';
 import { normalizeIncomingMessages } from './incoming.js';
+import { requireValidSignature } from './signature.js';
 
 
 const router = express.Router();
@@ -24,10 +25,13 @@ router.get('/', (req, res) => {
     }
 });
 
-// Incoming messages (and statuses) from Meta.
-// Meta retries delivery until it gets a 2xx, so always ack first and
-// process afterwards; a malformed payload must not turn into retries.
-router.post('/', (req, res) => {
+// Incoming messages (and statuses) from Meta. The X-Hub-Signature-256
+// header is validated first so forged payloads never reach the broadcast;
+// unsigned or badly signed requests get a 401.
+// Meta retries delivery until it gets a 2xx, so valid payloads are acked
+// first and processed afterwards; a malformed payload must not turn into
+// retries.
+router.post('/', requireValidSignature(config.META_APP_SECRET), (req, res) => {
     res.sendStatus(200);
 
     try {

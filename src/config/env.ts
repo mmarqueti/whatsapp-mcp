@@ -18,7 +18,6 @@ const envSchema = z.object({
     // WebSocket server refuses to start when it is missing.
     MCP_AUTH_TOKEN: z.string().min(1).optional(),
     PORT: z.string().default('4000'),
-    MCP_PORT: z.string().default('8000'),
     LOG_LEVEL: z.string().default('info'),
 });
 

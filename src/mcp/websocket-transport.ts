@@ -1,6 +1,7 @@
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { JSONRPCMessage, MessageExtraInfo } from '@modelcontextprotocol/sdk/types.js';
 import type { WebSocket } from 'ws';
+import { logger } from '../config/logger.js';
 
 // MCP Transport over an already-connected WebSocket. Fully typed against the
 // SDK's Transport interface (no @ts-ignore), so an SDK upgrade that changes
@@ -16,7 +17,7 @@ export class WebSocketTransport implements Transport {
                 const message = JSON.parse(data.toString()) as JSONRPCMessage;
                 this.onmessage?.(message);
             } catch (error) {
-                console.error('Failed to parse message:', error);
+                logger.error({ err: error }, 'Failed to parse message');
                 this.onerror?.(error instanceof Error ? error : new Error(String(error)));
             }
         });
@@ -26,7 +27,7 @@ export class WebSocketTransport implements Transport {
         });
 
         ws.on('error', (error: Error) => {
-            console.error('WebSocket error:', error);
+            logger.error({ err: error }, 'WebSocket error');
             this.onerror?.(error);
         });
     }

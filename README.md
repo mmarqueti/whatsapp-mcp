@@ -129,10 +129,35 @@ GET /v18.0/{PHONE_ID}
 Expose:
 ```
 GET  /webhook (verification)
+POST /webhook (incoming messages)
 ```
 
 Features:
 - Validate `hub.verify_token`
+- Normalize incoming customer messages from the Meta webhook payload and
+  broadcast them to every connected MCP client as a
+  `whatsapp.incoming_message` notification (see `docs/use_case.md`):
+  ```json
+  {
+    "method": "notifications/message",
+    "params": {
+      "name": "whatsapp.incoming_message",
+      "data": {
+        "from": "+15550123456",
+        "type": "text",
+        "text": "Hi, is my order #1234 ready?",
+        "timestamp": 1715623400,
+        "id": "wamid.HBgLM..."
+      }
+    }
+  }
+  ```
+- Always ack `POST /webhook` with 200 (Meta retries on non-2xx); delivery
+  receipts (`statuses`) are acknowledged but not broadcast.
+
+Note: Meta webhook signature validation (`X-Hub-Signature-256`) is not
+implemented yet - enable it before exposing the endpoint beyond a trusted
+network (tracked in a separate issue).
 
 ---
 

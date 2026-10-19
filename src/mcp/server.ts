@@ -5,12 +5,18 @@ import { timingSafeEqual } from 'crypto';
 import type { IncomingMessage } from 'http';
 import { z } from 'zod';
 import { whatsAppClient } from '../whatsapp/client.js';
+import type { NormalizedIncomingMessage } from '../whatsapp/incoming.js';
 
 import { config } from '../config/env.js';
+
+type NotificationTransport = { send: (message: any) => Promise<void> | void };
 
 class WhatsAppMcpServer {
     private server: McpServer;
     private wss: WebSocketServer | null = null;
+    // Every transport with a live client, WebSocket or stdio, so server
+    // events can be pushed to all of them.
+    private activeTransports = new Set<NotificationTransport>();
 
     constructor() {
         this.server = new McpServer({
@@ -108,6 +114,25 @@ class WhatsAppMcpServer {
         return expected.length === candidate.length && timingSafeEqual(expected, candidate);
     }
 
+    // Pushes a `whatsapp.incoming_message` notification (docs/use_case.md)
+    // to every connected MCP client. Called by POST /webhook when Meta
+    // delivers a customer message.
+    broadcastIncomingMessage(message: NormalizedIncomingMessage): void {
+        const notification = {
+            jsonrpc: '2.0',
+            method: 'notifications/message',
+            params: {
+                name: 'whatsapp.incoming_message',
+                data: message,
+            },
+        };
+        for (const transport of this.activeTransports) {
+            Promise.resolve(transport.send(notification)).catch((error) => {
+                console.error('Failed to broadcast incoming message to a client:', error);
+            });
+        }
+    }
+
     async start(httpServer: any) {
         if (!config.MCP_AUTH_TOKEN) {
             throw new Error('MCP_AUTH_TOKEN is required to start the MCP WebSocket server');
@@ -137,6 +162,8 @@ class WhatsAppMcpServer {
                 onmessage: undefined as any,
             };
 
+            this.activeTransports.add(transport);
+
             ws.on('message', (data: any) => {
                 try {
                     const message = JSON.parse(data.toString());
@@ -149,6 +176,7 @@ class WhatsAppMcpServer {
             });
 
             ws.on('close', () => {
+                this.activeTransports.delete(transport);
                 if (transport.onclose) {
                     transport.onclose();
                 }
@@ -168,6 +196,7 @@ class WhatsAppMcpServer {
 
     async startStdio() {
         const transport = new StdioServerTransport();
+        this.activeTransports.add(transport);
         await this.server.connect(transport);
         console.error('MCP Server running on stdio');
     }

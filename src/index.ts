@@ -2,13 +2,14 @@ import express from 'express';
 import { createServer } from 'http';
 import { config } from './config/env.js';
 import { webhookRouter } from './whatsapp/webhook.js';
+import { captureRawBody } from './whatsapp/signature.js';
 import { mcpServer } from './mcp/server.js';
 
 const app = express();
 const httpServer = createServer(app);
 
 // Middleware
-app.use(express.json());
+app.use(express.json({ verify: captureRawBody }));
 
 // Routes
 app.use('/webhook', webhookRouter);

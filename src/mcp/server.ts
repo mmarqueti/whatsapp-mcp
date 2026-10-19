@@ -1,4 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
+import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
 import { WebSocketServer, WebSocket, type VerifyClientCallbackSync } from 'ws';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { timingSafeEqual } from 'crypto';
@@ -6,29 +8,34 @@ import type { IncomingMessage } from 'http';
 import { z } from 'zod';
 import { whatsAppClient } from '../whatsapp/client.js';
 import type { NormalizedIncomingMessage } from '../whatsapp/incoming.js';
+import { WebSocketTransport } from './websocket-transport.js';
 
 import { config } from '../config/env.js';
 
-type NotificationTransport = { send: (message: any) => Promise<void> | void };
+type NotificationTransport = Pick<Transport, 'send'>;
 
 class WhatsAppMcpServer {
-    private server: McpServer;
     private wss: WebSocketServer | null = null;
     // Every transport with a live client, WebSocket or stdio, so server
     // events can be pushed to all of them.
     private activeTransports = new Set<NotificationTransport>();
 
-    constructor() {
-        this.server = new McpServer({
+    // One McpServer per client: Protocol.connect() binds a server to a
+    // single transport, so sharing one instance across connections lets a
+    // new client hijack the transport (and the responses) of the previous
+    // one. Each connection gets a fresh server with the same tools.
+    private createMcpServer(): McpServer {
+        const server = new McpServer({
             name: 'WhatsApp MCP Server',
             version: '1.0.0',
         });
 
-        this.registerTools();
+        this.registerTools(server);
+        return server;
     }
 
-    private registerTools() {
-        this.server.tool(
+    private registerTools(server: McpServer) {
+        server.tool(
             'send_text_message',
             {
                 to: z.string().describe('The WhatsApp phone number to send the message to'),
@@ -42,7 +49,7 @@ class WhatsAppMcpServer {
             }
         );
 
-        this.server.tool(
+        server.tool(
             'send_template_message',
             {
                 to: z.string().describe('The WhatsApp phone number'),
@@ -58,7 +65,7 @@ class WhatsAppMcpServer {
             }
         );
 
-        this.server.tool(
+        server.tool(
             'get_media',
             {
                 media_id: z.string().describe('The ID of the media to retrieve'),
@@ -73,7 +80,7 @@ class WhatsAppMcpServer {
 
 
 
-        this.server.tool(
+        server.tool(
             'health_check',
             {},
             async () => {
@@ -118,7 +125,7 @@ class WhatsAppMcpServer {
     // to every connected MCP client. Called by POST /webhook when Meta
     // delivers a customer message.
     broadcastIncomingMessage(message: NormalizedIncomingMessage): void {
-        const notification = {
+        const notification: JSONRPCMessage = {
             jsonrpc: '2.0',
             method: 'notifications/message',
             params: {
@@ -146,58 +153,23 @@ class WhatsAppMcpServer {
         this.wss.on('connection', async (ws: WebSocket) => {
             console.error('New MCP WebSocket connection');
 
-            // Minimal Transport implementation for WebSocket
-            const transport = {
-                start: async () => { },
-                send: async (message: any) => {
-                    if (ws.readyState === ws.OPEN) {
-                        ws.send(JSON.stringify(message));
-                    }
-                },
-                close: async () => {
-                    ws.close();
-                },
-                onclose: undefined as any,
-                onerror: undefined as any,
-                onmessage: undefined as any,
-            };
+            const transport = new WebSocketTransport(ws);
+            const server = this.createMcpServer();
 
             this.activeTransports.add(transport);
-
-            ws.on('message', (data: any) => {
-                try {
-                    const message = JSON.parse(data.toString());
-                    if (transport.onmessage) {
-                        transport.onmessage(message);
-                    }
-                } catch (error) {
-                    console.error('Failed to parse message:', error);
-                }
-            });
-
             ws.on('close', () => {
                 this.activeTransports.delete(transport);
-                if (transport.onclose) {
-                    transport.onclose();
-                }
             });
 
-            ws.on('error', (error: any) => {
-                console.error('WebSocket error:', error);
-                if (transport.onerror) {
-                    transport.onerror(error);
-                }
-            });
-
-            // @ts-ignore - McpServer.connect expects a Transport interface which matches our object structure
-            await this.server.connect(transport);
+            await server.connect(transport);
         });
     }
 
     async startStdio() {
         const transport = new StdioServerTransport();
         this.activeTransports.add(transport);
-        await this.server.connect(transport);
+        const server = this.createMcpServer();
+        await server.connect(transport);
         console.error('MCP Server running on stdio');
     }
 

@@ -9,6 +9,10 @@ const envSchema = z.object({
     META_WHATSAPP_PHONE_ID: z.string().min(1),
     META_WHATSAPP_WABA_ID: z.string().min(1),
     META_VERIFY_TOKEN: z.string().min(1),
+    // Shared secret that authenticates MCP WebSocket clients.
+    // Optional in the schema so --stdio mode can run without it; the
+    // WebSocket server refuses to start when it is missing.
+    MCP_AUTH_TOKEN: z.string().min(1).optional(),
     PORT: z.string().default('4000'),
     MCP_PORT: z.string().default('8000'),
     LOG_LEVEL: z.string().default('info'),

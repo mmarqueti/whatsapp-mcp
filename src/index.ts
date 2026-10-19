@@ -28,7 +28,13 @@ async function main() {
             // Start MCP Server (Stdio)
             await mcpServer.startStdio();
         } else {
-            // Start MCP Server (WebSocket)
+            // Start MCP Server (WebSocket) - fail fast without an auth token,
+            // otherwise anyone who can reach the port could send WhatsApp
+            // messages through this server.
+            if (!config.MCP_AUTH_TOKEN) {
+                console.error('❌ MCP_AUTH_TOKEN is not set. Refusing to start the MCP WebSocket server without authentication.');
+                process.exit(1);
+            }
             await mcpServer.start(httpServer);
         }
 

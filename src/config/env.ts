@@ -9,6 +9,10 @@ const envSchema = z.object({
     META_WHATSAPP_PHONE_ID: z.string().min(1),
     META_WHATSAPP_WABA_ID: z.string().min(1),
     META_VERIFY_TOKEN: z.string().min(1),
+    // App secret used to validate the X-Hub-Signature-256 header on
+    // incoming webhook deliveries. Required: without it the webhook
+    // cannot tell Meta's payloads from forged ones.
+    META_APP_SECRET: z.string().min(1),
     // Shared secret that authenticates MCP WebSocket clients.
     // Optional in the schema so --stdio mode can run without it; the
     // WebSocket server refuses to start when it is missing.

@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { whatsAppClient } from '../whatsapp/client.js';
 import type { NormalizedIncomingMessage } from '../whatsapp/incoming.js';
 import { WebSocketTransport } from './websocket-transport.js';
+import { logger } from '../config/logger.js';
 
 import { config } from '../config/env.js';
 
@@ -135,7 +136,7 @@ class WhatsAppMcpServer {
         };
         for (const transport of this.activeTransports) {
             Promise.resolve(transport.send(notification)).catch((error) => {
-                console.error('Failed to broadcast incoming message to a client:', error);
+                logger.error({ err: error }, 'Failed to broadcast incoming message to a client');
             });
         }
     }
@@ -151,7 +152,7 @@ class WhatsAppMcpServer {
         });
 
         this.wss.on('connection', async (ws: WebSocket) => {
-            console.error('New MCP WebSocket connection');
+            logger.info('New MCP WebSocket connection');
 
             const transport = new WebSocketTransport(ws);
             const server = this.createMcpServer();
@@ -170,7 +171,7 @@ class WhatsAppMcpServer {
         this.activeTransports.add(transport);
         const server = this.createMcpServer();
         await server.connect(transport);
-        console.error('MCP Server running on stdio');
+        logger.info('MCP Server running on stdio');
     }
 
 

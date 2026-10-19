@@ -3,6 +3,7 @@ import { config } from '../config/env.js';
 import { mcpServer } from '../mcp/server.js';
 import { normalizeIncomingMessages } from './incoming.js';
 import { requireValidSignature } from './signature.js';
+import { logger } from '../config/logger.js';
 
 
 const router = express.Router();
@@ -15,7 +16,7 @@ router.get('/', (req, res) => {
 
     if (mode && token) {
         if (mode === 'subscribe' && token === config.META_VERIFY_TOKEN) {
-            console.log('WEBHOOK_VERIFIED');
+            logger.info('WEBHOOK_VERIFIED');
             res.status(200).send(challenge);
         } else {
             res.sendStatus(403);
@@ -40,7 +41,7 @@ router.post('/', requireValidSignature(config.META_APP_SECRET), (req, res) => {
             mcpServer.broadcastIncomingMessage(message);
         }
     } catch (error) {
-        console.error('Failed to process incoming webhook payload:', error);
+        logger.error({ err: error }, 'Failed to process incoming webhook payload');
     }
 });
 

@@ -4,6 +4,7 @@ import { config } from './config/env.js';
 import { webhookRouter } from './whatsapp/webhook.js';
 import { captureRawBody } from './whatsapp/signature.js';
 import { mcpServer } from './mcp/server.js';
+import { logger } from './config/logger.js';
 
 const app = express();
 const httpServer = createServer(app);
@@ -33,7 +34,7 @@ async function main() {
             // otherwise anyone who can reach the port could send WhatsApp
             // messages through this server.
             if (!config.MCP_AUTH_TOKEN) {
-                console.error('❌ MCP_AUTH_TOKEN is not set. Refusing to start the MCP WebSocket server without authentication.');
+                logger.error('❌ MCP_AUTH_TOKEN is not set. Refusing to start the MCP WebSocket server without authentication.');
                 process.exit(1);
             }
             await mcpServer.start(httpServer);
@@ -41,14 +42,14 @@ async function main() {
 
         // Start HTTP Server
         httpServer.listen(config.PORT, () => {
-            console.error(`🚀 Server running on port ${config.PORT}`);
-            console.error(`webhook: http://localhost:${config.PORT}/webhook`);
+            logger.info(`🚀 Server running on port ${config.PORT}`);
+            logger.info(`webhook: http://localhost:${config.PORT}/webhook`);
             if (!useStdio) {
-                console.error(`mcp: ws://localhost:${config.PORT}`);
+                logger.info(`mcp: ws://localhost:${config.PORT}`);
             }
         });
     } catch (error) {
-        console.error('Failed to start server:', error);
+        logger.error({ err: error }, 'Failed to start server');
         process.exit(1);
     }
 }

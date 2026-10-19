@@ -13,6 +13,8 @@ Goal: Provide a minimal, clean, production-ready baseline so developers can use 
    ```bash
    cp .env.example .env
    ```
+   Set `MCP_AUTH_TOKEN` to a strong random secret as well - the MCP WebSocket
+   server refuses to start without it.
 2. Install dependencies:
    ```bash
    npm install
@@ -75,9 +77,13 @@ META_WHATSAPP_TOKEN=
 META_WHATSAPP_PHONE_ID=
 META_WHATSAPP_WABA_ID=
 META_VERIFY_TOKEN=
+MCP_AUTH_TOKEN=
 PORT=4000
 MCP_PORT=8000
 ```
+
+`MCP_AUTH_TOKEN` is the shared secret that authenticates MCP WebSocket
+clients. The server exits on startup if it is missing.
 
 Optional:
 
@@ -175,8 +181,14 @@ Verify connectivity with WhatsApp Cloud API.
 
 # 8. Security
 
+- **MCP WebSocket authentication (required).** Every WebSocket client must
+  present the shared `MCP_AUTH_TOKEN`, either as an
+  `Authorization: Bearer <token>` header or as a `?token=<token>` query
+  parameter (for MCP clients that cannot set headers). Connections without a
+  valid token are rejected during the upgrade handshake, and the server
+  refuses to start when `MCP_AUTH_TOKEN` is not set. Example:
+  `ws://localhost:4000/?token=$MCP_AUTH_TOKEN`
 - Validate Meta webhook signature (optional v1).
-- Restrict MCP tool usage to authenticated WebSocket clients.
 - Sanitize user inputs.
 - Never log tokens.
 
